@@ -1,0 +1,36 @@
+
+lane :sweep do |options|
+    multi_scan(
+        project: File.absolute_path('AtomicBoy/AtomicBoy.xcodeproj'),
+        try_count: 3,
+        fail_build: false,
+        output_directory: 'test_results',
+        output_types: 'junit',
+        output_files: 'report.junit'
+    )
+    tests = tests_from_junit(junit: 'test_results/report.junit')
+    unless tests[:failed].size.zero?
+        suppress_tests_from_junit(
+            xproject: File.absolute_path('AtomicBoy/AtomicBoy.xcodeproj'),
+            junit: 'test_results/report.junit',
+            suppress_type: :failed
+        )
+        git_commit(
+            path: 'AtomicBoy/AtomicBoy.xcodeproj/**/*.xcscheme',
+            message: 'Silence failing tests'
+        )
+        push_to_git_remote
+        repo = 'lyndsey-ferguson/medium-post-fragile-tests'
+        pr_title = 'Silencing fragile tests'
+        pr_body = 'Silencing the following fragile tests:\n'
+        tests[:failed].each do { |failed_test| pr_body << "  #{failed_test}\n" }
+        pr_body << '\n@lyndsey-ferguson please review and merge!'
+
+        create_pull_request(
+            api_token: File.read(File.absolute_path('.github_token')).strip,
+            repo: repo,
+            title: pr_title,
+            body: pr_body
+        )
+    end
+end
