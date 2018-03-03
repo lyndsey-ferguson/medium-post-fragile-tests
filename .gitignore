@@ -1,1 +1,4 @@
-.github_token
+.github-token
+.byebug_history
+report.*
+fastlane/README.md
