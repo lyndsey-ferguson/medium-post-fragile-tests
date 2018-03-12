@@ -28,7 +28,7 @@ lane :sweep do |options|
             path: "#{ATOMIC_BOY_XCODE_PROJECT_FILEPATH}/**/*.xcscheme",
             message: 'Silence failing tests'
         )
-        push_to_git_remote(remote: 'lyndsey')
+        push_to_git_remote
         repo = 'lyndsey-ferguson/medium-post-fragile-tests'
         pr_title = 'Silencing failing tests'
         pr_body = "Silencing the following failing tests:\r\n```\r\n"
