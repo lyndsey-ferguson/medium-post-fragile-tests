@@ -50,6 +50,8 @@ lane :sweep do |options|
                 byebug
                 testable, classname, testcase = failed_test.split('/')
                 target_testcase = REXML::XPath.first(report_file, "testcase[@name='#{testcase}' and @classname='#{classname}']")
+                next if target_testcase.nil?
+                
                 failure = target_testcase.elements['failure'].text
                 create_issue_github(
                     title: "Fix failing test #{failed_test}",
