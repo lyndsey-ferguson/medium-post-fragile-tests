@@ -41,5 +41,36 @@ lane :sweep do |options|
             title: pr_title,
             body: pr_body
         )
+
+        create_issue_github
+    end
+end
+
+lane :create_issue_github do |options|
+    payload = {
+        'title' => 'test title',
+        'base' => 'this is an issue'
+    }
+
+    github_api(
+        server_url: 'https://api.github.com',
+        api_token: File.read(File.absolute_path('../.github-token')).strip,
+        http_method: 'POST',
+        path: "repos/lyndsey-ferguson/medium-post-fragile-tests/issues",
+        body: payload,
+        error_handlers: {
+        '*' => proc do |result|
+            UI.error("GitHub responded with #{result[:status]}: #{result[:body]}")
+            return nil
+        end
+        }
+    ) do |result|
+        json = result[:json]
+        number = json['number']
+        html_url = json['html_url']
+        UI.success("Successfully created issue request ##{number}. You can see it at '#{html_url}'")
+
+        Actions.lane_context[SharedValues::CREATE_PULL_REQUEST_HTML_URL] = html_url
+        return html_url
     end
 end
