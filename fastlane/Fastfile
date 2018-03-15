@@ -42,19 +42,22 @@ lane :sweep do |options|
             title: pr_title,
             body: pr_body
         )
-        report_file = File.open(junit_report_filepath) { |f| REXML::Document.new(f) }
-        failed_tests.each do |failed_test|
-            byebug
-            testable, classname, testcase = failed_test.split('/')
-            target_testcase = REXML::XPath.first(report_file, "testcase[@name='#{testcase}' and @classname='#{classname}']")
-            failure = target_testcase.elements['failure'].text
-            create_issue_github(
-                title: "Fix failing test #{failed_test}",
-                body: "`#{failed_test}` is failing due to:" \
-                      "```" \
-                      "#{failure}" \
-                      "```"
-            )
+
+        Dir.glob("./test_results/**/report.junit").each do |junit_report_filepath|
+            report_file = File.open(junit_report_filepath) { |f| REXML::Document.new(f) }
+            failed_tests.each do |failed_test|
+                byebug
+                testable, classname, testcase = failed_test.split('/')
+                target_testcase = REXML::XPath.first(report_file, "testcase[@name='#{testcase}' and @classname='#{classname}']")
+                failure = target_testcase.elements['failure'].text
+                create_issue_github(
+                    title: "Fix failing test #{failed_test}",
+                    body: "`#{failed_test}` is failing due to:" \
+                        "```" \
+                        "#{failure}" \
+                        "```"
+                )
+            end
         end
     end
 end
