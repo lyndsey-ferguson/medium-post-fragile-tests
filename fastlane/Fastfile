@@ -1,4 +1,3 @@
-require 'pry-byebug'
 
 ATOMIC_BOY_XCODE_PROJECT_FILEPATH = File.absolute_path('../AtomicBoy/AtomicBoy.xcodeproj')
 lane :sweep do |options|
@@ -36,29 +35,29 @@ lane :sweep do |options|
         failed_tests.each { |failed_test| pr_body << "#{failed_test}\r\n" }
         pr_body << "```\r\n@lyndsey-ferguson please review and merge!"
 
-        UI.message('create_pull_request')
-        # create_pull_request(
-        #     api_token: File.read(File.absolute_path('../.github-token')).strip,
-        #     repo: repo,
-        #     title: pr_title,
-        #     body: pr_body
-        # )
+        create_pull_request(
+            api_token: File.read(File.absolute_path('../.github-token')).strip,
+            repo: repo,
+            title: pr_title,
+            body: pr_body
+        )
 
         Dir.glob("../test_results/**/report.junit").each do |junit_report_filepath|
             report_file = File.open(junit_report_filepath) { |f| REXML::Document.new(f) }
             failed_tests.each do |failed_test|
-                byebug
                 testable, classname, testcase = failed_test.split('/')
-                target_testcase = REXML::XPath.first(report_file, "testcase[@name='#{testcase}' and @classname='#{classname}']")
+                target_testcase = REXML::XPath.first(report_file, "//testcase[@name='#{testcase}' and @classname='#{classname}']")
                 next if target_testcase.nil?
-                
-                failure = target_testcase.elements['failure'].text
+
+                failure_element = target_testcase.elements['failure']
+                failure = failure_element.attributes['message']
+                failure_location = failure_element.text
                 create_issue_github(
                     title: "Fix failing test #{failed_test}",
-                    body: "`#{failed_test}` is failing due to:" \
-                        "```" \
-                        "#{failure}" \
-                        "```"
+                    body: "`#{failed_test}` is failing on #{failure_location.strip} due to:\r\n" \
+                        "```\r\n" \
+                        "#{failure}\r\n" \
+                        "```\r\n"
                 )
             end
         end
@@ -68,7 +67,7 @@ end
 private_lane :create_issue_github do |options|
     payload = {
         'title' => options[:title],
-        'base' => options[:body]
+        'body' => options[:body]
     }
 
     result = github_api(
@@ -84,7 +83,6 @@ private_lane :create_issue_github do |options|
         end
         }
     )
-
     json = result[:json]
     number = json['number']
     html_url = json['html_url']
