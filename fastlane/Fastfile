@@ -1,3 +1,4 @@
+require 'pry-byebug'
 
 ATOMIC_BOY_XCODE_PROJECT_FILEPATH = File.absolute_path('../AtomicBoy/AtomicBoy.xcodeproj')
 lane :sweep do |options|
@@ -41,18 +42,30 @@ lane :sweep do |options|
             title: pr_title,
             body: pr_body
         )
-
-        create_issue_github
+        report_file = File.open(junit_report_filepath) { |f| REXML::Document.new(f) }
+        failed_tests.each do |failed_test|
+            byebug
+            testable, classname, testcase = failed_test.split('/')
+            target_testcase = REXML::XPath.first(report_file, "testcase[@name='#{testcase}' and @classname='#{classname}']")
+            failure = target_testcase.elements['failure'].text
+            create_issue_github(
+                title: "Fix failing test #{failed_test}",
+                body: "`#{failed_test}` is failing due to:" \
+                      "```" \
+                      "#{failure}" \
+                      "```"
+            )
+        end
     end
 end
 
-lane :create_issue_github do |options|
+private_lane :create_issue_github do |options|
     payload = {
-        'title' => 'test title',
-        'base' => 'this is an issue'
+        'title' => options[:title],
+        'base' => options[:body]
     }
 
-    github_api(
+    result = github_api(
         server_url: 'https://api.github.com',
         api_token: File.read(File.absolute_path('../.github-token')).strip,
         http_method: 'POST',
@@ -64,13 +77,10 @@ lane :create_issue_github do |options|
             return nil
         end
         }
-    ) do |result|
-        json = result[:json]
-        number = json['number']
-        html_url = json['html_url']
-        UI.success("Successfully created issue request ##{number}. You can see it at '#{html_url}'")
+    )
 
-        Actions.lane_context[SharedValues::CREATE_PULL_REQUEST_HTML_URL] = html_url
-        return html_url
-    end
+    json = result[:json]
+    number = json['number']
+    html_url = json['html_url']
+    UI.success("Successfully created issue request ##{number}. You can see it at '#{html_url}'")
 end
