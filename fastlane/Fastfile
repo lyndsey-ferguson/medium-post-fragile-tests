@@ -87,8 +87,9 @@ def create_issue_github(options)
         body: payload
     )
     byebug
-    result.each do |found_issue_result|
-        return if found_issue_result['title'] == options[:title]
+    result[:json].each do |found_issue_result|
+        is_issue = found_issue_result['pull_request'].nil?
+        return if is_issue && found_issue_result['title'] == options[:title]
     end
     
     payload = {
