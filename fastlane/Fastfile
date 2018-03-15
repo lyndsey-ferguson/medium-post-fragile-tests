@@ -41,5 +41,58 @@ lane :sweep do |options|
             title: pr_title,
             body: pr_body
         )
+
+        failed_test_details(failed_tests).each do |failed_test, details|
+            create_issue_github(
+                title: "Fix failing test #{failed_test}",
+                body: "`#{failed_test}` is failing on #{details[:location]} due to:\r\n" \
+                    "```\r\n" \
+                    "#{details[:failure]}\r\n" \
+                    "```\r\n"
+            )
+        end
     end
+end
+
+def failed_test_details(failed_tests)
+    details = {}
+    Dir.glob("../test_results/**/report.junit").each do |junit_report_filepath|
+        report_file = File.open(junit_report_filepath) { |f| REXML::Document.new(f) }
+        failed_tests.each do |failed_test|
+            testable, classname, testcase = failed_test.split('/')
+            target_testcase = REXML::XPath.first(report_file, "//testcase[@name='#{testcase}' and @classname='#{classname}']")
+            next if target_testcase.nil?
+
+            details[failed_test] = {
+                failure: failure_element.attributes['message'],
+                location: failure_element.text.strip
+            }
+        end
+    end
+    details
+end
+
+def create_issue_github(options)
+    payload = {
+        'title' => options[:title],
+        'body' => options[:body]
+    }
+
+    result = github_api(
+        server_url: 'https://api.github.com',
+        api_token: File.read(File.absolute_path('../.github-token')).strip,
+        http_method: 'POST',
+        path: "repos/lyndsey-ferguson/medium-post-fragile-tests/issues",
+        body: payload,
+        error_handlers: {
+        '*' => proc do |result|
+            UI.error("GitHub responded with #{result[:status]}: #{result[:body]}")
+            return nil
+        end
+        }
+    )
+    json = result[:json]
+    number = json['number']
+    html_url = json['html_url']
+    UI.success("Successfully created issue request ##{number}. You can see it at '#{html_url}'")
 end
