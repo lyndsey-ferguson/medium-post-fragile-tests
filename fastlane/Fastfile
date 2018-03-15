@@ -1,5 +1,9 @@
+require 'pry-byebug'
 
 ATOMIC_BOY_XCODE_PROJECT_FILEPATH = File.absolute_path('../AtomicBoy/AtomicBoy.xcodeproj')
+GITHUB_REPO = 'lyndsey-ferguson/medium-post-fragile-tests'
+GITHUB_TOKEN = File.read(File.absolute_path('../.github-token')).strip
+
 lane :sweep do |options|
     result = multi_scan(
         project: ATOMIC_BOY_XCODE_PROJECT_FILEPATH,
@@ -29,15 +33,14 @@ lane :sweep do |options|
             message: 'Silence failing tests'
         )
         push_to_git_remote
-        repo = 'lyndsey-ferguson/medium-post-fragile-tests'
         pr_title = 'Silencing failing tests'
         pr_body = "Silencing the following failing tests:\r\n```\r\n"
         failed_tests.each { |failed_test| pr_body << "#{failed_test}\r\n" }
         pr_body << "```\r\n@lyndsey-ferguson please review and merge!"
 
         create_pull_request(
-            api_token: File.read(File.absolute_path('../.github-token')).strip,
-            repo: repo,
+            api_token: GITHUB_TOKEN,
+            repo: GITHUB_REPO,
             title: pr_title,
             body: pr_body
         )
@@ -75,15 +78,28 @@ end
 
 def create_issue_github(options)
     payload = {
+        'state' => 'open'
+    }
+    result = github_api(
+        api_token: GITHUB_TOKEN,
+        http_method: 'GET',
+        path: "repos/#{GITHUB_REPO}/issues",
+        body: payload
+    )
+    byebug
+    result.each do |found_issue_result|
+        return if found_issue_result['title'] == options[:title]
+    end
+    
+    payload = {
         'title' => options[:title],
         'body' => options[:body]
     }
 
     result = github_api(
-        server_url: 'https://api.github.com',
-        api_token: File.read(File.absolute_path('../.github-token')).strip,
+        api_token: GITHUB_TOKEN,
         http_method: 'POST',
-        path: "repos/lyndsey-ferguson/medium-post-fragile-tests/issues",
+        path: "repos/#{GITHUB_REPO}/issues",
         body: payload,
         error_handlers: {
         '*' => proc do |result|
