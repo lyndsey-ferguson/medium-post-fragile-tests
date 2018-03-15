@@ -1,5 +1,9 @@
+require 'pry-byebug'
 
 ATOMIC_BOY_XCODE_PROJECT_FILEPATH = File.absolute_path('../AtomicBoy/AtomicBoy.xcodeproj')
+GITHUB_REPO = 'lyndsey-ferguson/medium-post-fragile-tests'
+GITHUB_TOKEN = File.read(File.absolute_path('../.github-token')).strip
+
 lane :sweep do |options|
     result = multi_scan(
         project: ATOMIC_BOY_XCODE_PROJECT_FILEPATH,
@@ -29,17 +33,84 @@ lane :sweep do |options|
             message: 'Silence failing tests'
         )
         push_to_git_remote
-        repo = 'lyndsey-ferguson/medium-post-fragile-tests'
         pr_title = 'Silencing failing tests'
         pr_body = "Silencing the following failing tests:\r\n```\r\n"
         failed_tests.each { |failed_test| pr_body << "#{failed_test}\r\n" }
         pr_body << "```\r\n@lyndsey-ferguson please review and merge!"
 
         create_pull_request(
-            api_token: File.read(File.absolute_path('../.github-token')).strip,
-            repo: repo,
+            api_token: GITHUB_TOKEN,
+            repo: GITHUB_REPO,
             title: pr_title,
             body: pr_body
         )
+
+        failed_test_details(failed_tests).each do |failed_test, details|
+            create_issue_github(
+                title: "Fix failing test #{failed_test}",
+                body: "`#{failed_test}` is failing on #{details[:location]} due to:\r\n" \
+                    "```\r\n" \
+                    "#{details[:failure]}\r\n" \
+                    "```\r\n"
+            )
+        end
     end
+end
+
+def failed_test_details(failed_tests)
+    details = {}
+    Dir.glob("../test_results/**/report.junit").each do |junit_report_filepath|
+        report_file = File.open(junit_report_filepath) { |f| REXML::Document.new(f) }
+        failed_tests.each do |failed_test|
+            testable, classname, testcase = failed_test.split('/')
+            target_testcase = REXML::XPath.first(report_file, "//testcase[@name='#{testcase}' and @classname='#{classname}']")
+            next if target_testcase.nil?
+
+            failure_element = target_testcase.elements['failure']
+            details[failed_test] = {
+                failure: failure_element.attributes['message'],
+                location: failure_element.text.strip
+            }
+        end
+    end
+    details
+end
+
+def create_issue_github(options)
+    payload = {
+        'state' => 'open'
+    }
+    result = github_api(
+        api_token: GITHUB_TOKEN,
+        http_method: 'GET',
+        path: "repos/#{GITHUB_REPO}/issues",
+        body: payload
+    )
+    byebug
+    result[:json].each do |found_issue_result|
+        is_issue = found_issue_result['pull_request'].nil?
+        return if is_issue && found_issue_result['title'] == options[:title]
+    end
+    
+    payload = {
+        'title' => options[:title],
+        'body' => options[:body]
+    }
+
+    result = github_api(
+        api_token: GITHUB_TOKEN,
+        http_method: 'POST',
+        path: "repos/#{GITHUB_REPO}/issues",
+        body: payload,
+        error_handlers: {
+        '*' => proc do |result|
+            UI.error("GitHub responded with #{result[:status]}: #{result[:body]}")
+            return nil
+        end
+        }
+    )
+    json = result[:json]
+    number = json['number']
+    html_url = json['html_url']
+    UI.success("Successfully created issue request ##{number}. You can see it at '#{html_url}'")
 end
