@@ -63,6 +63,7 @@ def failed_test_details(failed_tests)
             target_testcase = REXML::XPath.first(report_file, "//testcase[@name='#{testcase}' and @classname='#{classname}']")
             next if target_testcase.nil?
 
+            failure_element = target_testcase.elements['failure']
             details[failed_test] = {
                 failure: failure_element.attributes['message'],
                 location: failure_element.text.strip
