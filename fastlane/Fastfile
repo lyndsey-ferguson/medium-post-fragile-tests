@@ -36,14 +36,15 @@ lane :sweep do |options|
         failed_tests.each { |failed_test| pr_body << "  #{failed_test}\r\n" }
         pr_body << '\r\n@lyndsey-ferguson please review and merge!'
 
-        create_pull_request(
-            api_token: File.read(File.absolute_path('../.github-token')).strip,
-            repo: repo,
-            title: pr_title,
-            body: pr_body
-        )
+        UI.message('create_pull_request')
+        # create_pull_request(
+        #     api_token: File.read(File.absolute_path('../.github-token')).strip,
+        #     repo: repo,
+        #     title: pr_title,
+        #     body: pr_body
+        # )
 
-        Dir.glob("./test_results/**/report.junit").each do |junit_report_filepath|
+        Dir.glob("../test_results/**/report.junit").each do |junit_report_filepath|
             report_file = File.open(junit_report_filepath) { |f| REXML::Document.new(f) }
             failed_tests.each do |failed_test|
                 byebug
