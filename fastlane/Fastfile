@@ -31,7 +31,7 @@ lane :sweep do |options|
         push_to_git_remote
         repo = 'lyndsey-ferguson/medium-post-fragile-tests'
         pr_title = 'Silencing failing tests'
-        pr_body = "Silencing the following failing tests:\r\n```"
+        pr_body = "Silencing the following failing tests:\r\n```\r\n"
         failed_tests.each { |failed_test| pr_body << "#{failed_test}\r\n" }
         pr_body << "```\r\n@lyndsey-ferguson please review and merge!"
 
