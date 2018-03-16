@@ -1,45 +1,45 @@
 
 ATOMIC_BOY_XCODE_PROJECT_FILEPATH = File.absolute_path('../AtomicBoy/AtomicBoy.xcodeproj')
-lane :sweep do |options|
-    result = multi_scan(
-        project: ATOMIC_BOY_XCODE_PROJECT_FILEPATH,
-        try_count: 3,
-        fail_build: false,
-        scheme: 'AtomicBoy',
-        output_directory: 'test_results',
-        output_types: 'junit',
-        output_files: 'report.junit'
+lane :sweep do |_options|
+  result = multi_scan(
+    project: ATOMIC_BOY_XCODE_PROJECT_FILEPATH,
+    try_count: 3,
+    fail_build: false,
+    scheme: 'AtomicBoy',
+    output_directory: 'test_results',
+    output_types: 'junit',
+    output_files: 'report.junit'
+  )
+  failed_tests = result[:failed_tests]
+  unless failed_tests.size.zero?
+    git_checkout_newbranch = [
+      'git',
+      'checkout',
+      '-b',
+      "suppress_tests_#{Time.now.getutc.to_s.gsub(/[^0-9a-zA-Z]/, '_')}"
+    ]
+    Actions.sh(git_checkout_newbranch.join(' '))
+    suppress_tests(
+      xcodeproj: ATOMIC_BOY_XCODE_PROJECT_FILEPATH,
+      tests: failed_tests,
+      scheme: 'AtomicBoy'
     )
-    failed_tests = result[:failed_tests]
-    unless failed_tests.size.zero?
-        git_checkout_newbranch = [
-            'git',
-            'checkout',
-            '-b',
-            "suppress_tests_#{Time.now.getutc.to_s.gsub(/[^0-9a-zA-Z]/, '_')}"
-        ]
-        Actions.sh(git_checkout_newbranch.join(' '))
-        suppress_tests(
-            xcodeproj: ATOMIC_BOY_XCODE_PROJECT_FILEPATH,
-            tests: failed_tests,
-            scheme: 'AtomicBoy'
-        )
-        git_commit(
-            path: "#{ATOMIC_BOY_XCODE_PROJECT_FILEPATH}/**/*.xcscheme",
-            message: 'Silence failing tests'
-        )
-        push_to_git_remote
-        repo = 'lyndsey-ferguson/medium-post-fragile-tests'
-        pr_title = 'Silencing failing tests'
-        pr_body = "Silencing the following failing tests:\r\n```\r\n"
-        failed_tests.each { |failed_test| pr_body << "#{failed_test}\r\n" }
-        pr_body << "```\r\n@lyndsey-ferguson please review and merge!"
+    git_commit(
+      path: "#{ATOMIC_BOY_XCODE_PROJECT_FILEPATH}/**/*.xcscheme",
+      message: 'Silence failing tests'
+    )
+    push_to_git_remote
+    repo = 'lyndsey-ferguson/medium-post-fragile-tests'
+    pr_title = 'Silencing failing tests'
+    pr_body = "Silencing the following failing tests:\r\n```\r\n"
+    failed_tests.each { |failed_test| pr_body << "#{failed_test}\r\n" }
+    pr_body << "```\r\n@lyndsey-ferguson please review and merge!"
 
-        create_pull_request(
-            api_token: File.read(File.absolute_path('../.github-token')).strip,
-            repo: repo,
-            title: pr_title,
-            body: pr_body
-        )
-    end
+    create_pull_request(
+      api_token: File.read(File.absolute_path('../.github-token')).strip,
+      repo: repo,
+      title: pr_title,
+      body: pr_body
+    )
+  end
 end
