@@ -48,6 +48,14 @@
                BlueprintName = "AtomicBoyUITests"
                ReferencedContainer = "container:AtomicBoy.xcodeproj">
             </BuildableReference>
+            <SkippedTests>
+               <Test
+                  Identifier = "AtomicBoyUITests/testExample">
+               </Test>
+               <Test
+                  Identifier = "AtomicBoyUITests/testExample2">
+               </Test>
+            </SkippedTests>
          </TestableReference>
       </Testables>
       <MacroExpansion>
