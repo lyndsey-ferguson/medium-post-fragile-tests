@@ -15,7 +15,22 @@ lane :sweep do |_options|
   )
   failed_tests = result[:failed_tests]
   unless failed_tests.size.zero?
-    git_checkout_newbranch = [
+    suppress_failed_tests(failed_tests)
+
+    failed_test_details(failed_tests).each do |failed_test, details|
+      create_issue_github(
+        title: "Fix failing test #{failed_test}",
+        body: "`#{failed_test}` is failing on #{details[:location]} due to:\r\n" \
+              "```\r\n" \
+              "#{details[:failure]}\r\n" \
+              "```\r\n"
+      )
+    end
+  end
+end
+
+def suppress_failed_tests(failed_tests)
+  git_checkout_newbranch = [
       'git',
       'checkout',
       '-b',
@@ -32,33 +47,24 @@ lane :sweep do |_options|
       message: 'Silence failing tests'
     )
     push_to_git_remote
-    pr_title = 'Silencing failing tests'
-    pr_body = "Silencing the following failing tests:\r\n```\r\n"
-    failed_tests.each { |failed_test| pr_body << "#{failed_test}\r\n" }
-    pr_body << "```\r\n@lyndsey-ferguson please review and merge!"
-
     create_pull_request(
       api_token: GITHUB_TOKEN,
       repo: GITHUB_REPO,
-      title: pr_title,
-      body: pr_body
+      title: 'Silencing failing tests',
+      body: pull_request_body(failed_tests)
     )
+end
 
-    failed_test_details(failed_tests).each do |failed_test, details|
-      create_issue_github(
-        title: "Fix failing test #{failed_test}",
-        body: "`#{failed_test}` is failing on #{details[:location]} due to:\r\n" \
-              "```\r\n" \
-              "#{details[:failure]}\r\n" \
-              "```\r\n"
-      )
-    end
-  end
+def pull_request_body(failed_tests)
+  pr_body = "Silencing the following failing tests:\r\n```\r\n"
+  failed_tests.each { |failed_test| pr_body << "#{failed_test}\r\n" }
+  pr_body << "```\r\n@lyndsey-ferguson please review and merge!"
 end
 
 def failed_test_details(failed_tests)
   details = {}
-  Dir.glob('../test_results/**/report.junit').each do |junit_report_filepath|
+  report_files = Dir.glob('../test_results/**/report.junit')
+  report_files.each do |junit_report_filepath|
     report_file = File.open(junit_report_filepath) { |f| REXML::Document.new(f) }
     failed_tests.each do |failed_test|
       _, classname, testcase = failed_test.split('/')
@@ -79,15 +85,20 @@ def create_issue_github(options)
   payload = {
     'state' => 'open'
   }
-  result = github_api(
+  get_issues_result = github_api(
     api_token: GITHUB_TOKEN,
     http_method: 'GET',
     path: "repos/#{GITHUB_REPO}/issues",
     body: payload
   )
-  result[:json].each do |found_issue_result|
+  issue_exists = get_issues_result[:json].any? do |found_issue_result|
     is_issue = found_issue_result['pull_request'].nil?
-    return if is_issue && found_issue_result['title'] == options[:title]
+    is_issue && found_issue_result['title'] == options[:title]
+  end
+  
+  if issue_exists
+    add_issue_comment_result = github_api()
+    return
   end
 
   payload = {
@@ -95,19 +106,19 @@ def create_issue_github(options)
     'body' => options[:body]
   }
 
-  result = github_api(
+  post_new_issue_result = github_api(
     api_token: GITHUB_TOKEN,
     http_method: 'POST',
     path: "repos/#{GITHUB_REPO}/issues",
     body: payload,
     error_handlers: {
-      '*' => proc do |result|
-        UI.error("GitHub responded with #{result[:status]}: #{result[:body]}")
+      '*' => proc do |post_new_issue_result|
+        UI.error("GitHub responded with #{post_new_issue_result[:status]}: #{post_new_issue_result[:body]}")
         return nil
       end
     }
   )
-  json = result[:json]
+  json = post_new_issue_result[:json]
   number = json['number']
   html_url = json['html_url']
   UI.success("Successfully created issue request ##{number}. You can see it at '#{html_url}'")
