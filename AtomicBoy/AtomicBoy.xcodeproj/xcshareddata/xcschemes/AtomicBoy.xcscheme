@@ -52,6 +52,9 @@
                <Test
                   Identifier = "AtomicBoyUITests/testExample2">
                </Test>
+               <Test
+                  Identifier = "AtomicBoyUITests/testExample">
+               </Test>
             </SkippedTests>
          </TestableReference>
       </Testables>
