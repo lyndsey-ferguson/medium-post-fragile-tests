@@ -1,5 +1,8 @@
 
 ATOMIC_BOY_XCODE_PROJECT_FILEPATH = File.absolute_path('../AtomicBoy/AtomicBoy.xcodeproj')
+GITHUB_REPO = 'lyndsey-ferguson/medium-post-fragile-tests'.freeze
+ENV['GITHUB_API_TOKEN'] = ENV['GITHUB_TOKEN'] = File.read(File.absolute_path('../.github-token')).strip
+
 lane :sweep do |_options|
   result = multi_scan(
     project: ATOMIC_BOY_XCODE_PROJECT_FILEPATH,
@@ -10,36 +13,132 @@ lane :sweep do |_options|
     output_types: 'junit',
     output_files: 'report.junit'
   )
-  failed_tests = result[:failed_tests]
-  unless failed_tests.size.zero?
-    git_checkout_newbranch = [
-      'git',
-      'checkout',
-      '-b',
-      "suppress_tests_#{Time.now.getutc.to_s.gsub(/[^0-9a-zA-Z]/, '_')}"
-    ]
-    Actions.sh(git_checkout_newbranch.join(' '))
-    suppress_tests(
-      xcodeproj: ATOMIC_BOY_XCODE_PROJECT_FILEPATH,
-      tests: failed_tests,
-      scheme: 'AtomicBoy'
-    )
-    git_commit(
-      path: "#{ATOMIC_BOY_XCODE_PROJECT_FILEPATH}/**/*.xcscheme",
-      message: 'Silence failing tests'
-    )
-    push_to_git_remote
-    repo = 'lyndsey-ferguson/medium-post-fragile-tests'
-    pr_title = 'Silencing failing tests'
-    pr_body = "Silencing the following failing tests:\r\n```\r\n"
-    failed_tests.each { |failed_test| pr_body << "#{failed_test}\r\n" }
-    pr_body << "```\r\n@lyndsey-ferguson please review and merge!"
+  failure_details = result[:failure_details] || {}
+  unless failure_details.empty?
+    suppress_failed_tests(failure_details.keys)
 
-    create_pull_request(
-      api_token: File.read(File.absolute_path('../.github-token')).strip,
-      repo: repo,
-      title: pr_title,
-      body: pr_body
-    )
+    failure_details.each do |failed_test, details|
+      update_issue(
+        title: "Fix failing test #{failed_test}",
+        body: "`#{failed_test}` is failing on #{details[:location]} due to:\r\n" \
+              "```\r\n" \
+              "#{details[:message]}\r\n" \
+              "```\r\n"
+      )
+    end
   end
+end
+
+def suppress_failed_tests(failed_tests)
+  git_checkout_newbranch = [
+    'git',
+    'checkout',
+    '-b',
+    "suppress_tests_#{Time.now.getutc.to_s.gsub(/[^0-9a-zA-Z]/, '_')}"
+  ]
+  Actions.sh(git_checkout_newbranch.join(' '))
+  suppress_tests(
+    xcodeproj: ATOMIC_BOY_XCODE_PROJECT_FILEPATH,
+    tests: failed_tests,
+    scheme: 'AtomicBoy'
+  )
+  git_commit(
+    path: "#{ATOMIC_BOY_XCODE_PROJECT_FILEPATH}/**/*.xcscheme",
+    message: 'Silence failing tests'
+  )
+  push_to_git_remote
+  repo = 'lyndsey-ferguson/medium-post-fragile-tests'
+  pr_title = 'Silencing failing tests'
+  pr_body = "Silencing the following failing tests:\r\n```\r\n"
+  failed_tests.each { |failed_test| pr_body << "#{failed_test}\r\n" }
+  pr_body << "```\r\n@lyndsey-ferguson please review and merge!"
+  create_pull_request(
+    repo: GITHUB_REPO,
+    title: 'Silencing failing tests',
+    body: pull_request_body(failed_tests)
+  )
+end
+
+def pull_request_body(failed_tests)
+  pr_body = "Silencing the following failing tests:\r\n```\r\n"
+  failed_tests.each { |failed_test| pr_body << "#{failed_test}\r\n" }
+  pr_body << "```\r\n@lyndsey-ferguson please review and merge!"
+end
+
+def update_issue(options)
+  found_issue_number = is_issue_open(options[:title])
+
+  if found_issue_number
+    add_issue_comment(found_issue_number, '@lyndsey-ferguson this test is still failing!')
+  else
+    create_issue(options[:title], options[:body])
+  end
+end
+
+def add_issue_comment(issue_number, comment)
+  payload = {
+    'body' => comment
+  }
+  add_issue_comment_result = github_api(
+    http_method: 'POST',
+    path: "repos/#{GITHUB_REPO}/issues/#{issue_number}/comments",
+    body: payload,
+    error_handlers: {
+      '*' => proc do |post_issue_comment_result|
+        UI.error("GitHub responded with #{post_issue_comment_result[:status]}: #{post_issue_comment_result[:body]}")
+        return nil
+      end
+    }
+  )[:json]
+  html_url = add_issue_comment_result['html_url']
+  UI.success("Successfully updated issue ##{issue_number}. You can see it at '#{html_url}'")
+end
+
+def create_issue(title, body)
+  payload = {
+    'title' => title,
+    'body' => body
+  }
+
+  create_issue_result = github_api(
+    http_method: 'POST',
+    path: "repos/#{GITHUB_REPO}/issues",
+    body: payload,
+    error_handlers: {
+      '*' => proc do |post_new_issue_result|
+        UI.error("GitHub responded with #{post_new_issue_result[:status]}: #{post_new_issue_result[:body]}")
+        return nil
+      end
+    }
+  )[:json]
+  number = create_issue_result['number']
+  html_url = create_issue_result['html_url']
+  UI.success("Successfully created issue request ##{number}. You can see it at '#{html_url}'")
+end
+
+def is_issue_open(issue_title)
+  payload = {
+    'state' => 'open'
+  }
+  get_issues_result = github_api(
+    http_method: 'GET',
+    path: "repos/#{GITHUB_REPO}/issues",
+    body: payload,
+    error_handlers: {
+      '*' => proc do |get_open_issues_result|
+        UI.error("GitHub responded with #{get_open_issues_result[:status]}: #{get_open_issues_result[:body]}")
+        return [false, 0]
+      end
+    }
+  )
+  found_issue_number = nil
+  issue_exists = get_issues_result[:json].any? do |found_issue_result|
+    # both pull requests and issues are a type of issue. Let's just
+    # get issues that do not have the 'pull_request' attribute.
+    is_issue = found_issue_result['pull_request'].nil?
+    if is_issue && found_issue_result['title'] == issue_title
+      found_issue_number = found_issue_result['number']
+    end
+  end
+  found_issue_number
 end
